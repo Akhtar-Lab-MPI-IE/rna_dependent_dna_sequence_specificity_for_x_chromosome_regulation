@@ -1,0 +1,11 @@
+snakePipesEnv: 'snakepipes_3.1.0'
+fna: '/data/repository/organisms/dm6_ensembl/genome_fasta/genome.fa'
+chromsizes: '/data/repository/organisms/dm6_ensembl/genome_fasta/genome.chrom.sizes'
+starindex: '/data/repository/organisms/dm6_ensembl/STARIndex/2.7.10a'
+gtf: '/data/repository/organisms/dm6_ensembl/Ensembl/release-96/genes.gtf'
+gff: '/data/manke/group/deboutte/repo/Analysis/msl1_flies/conf/Drosophila_melanogaster.BDGP6.91.canonical.gff3.gz'
+rar: '/data/manke/group/deboutte/repo/Analysis/msl1_flies/conf/dm6_rar.bed'
+canchr: '/data/manke/group/deboutte/repo/Analysis/msl1_flies/conf/can_chrs.txt'
+geneinfo: '/data/manke/group/deboutte/repo/Analysis/msl1_flies/conf/genes.info'
+motifs: '/data/manke/group/deboutte/repo/Analysis/msl1_flies/conf/motifs.meme'
+padj_cutoff: 0.01

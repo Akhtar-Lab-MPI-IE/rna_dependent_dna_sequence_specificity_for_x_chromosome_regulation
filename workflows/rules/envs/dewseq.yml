@@ -1,0 +1,15 @@
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - gxx
+  - python = 3.11
+  - zlib
+  - xz
+  - numpy
+  - r-rmarkdown
+  - r-dplyr
+  - bioconductor-dewseq
+  - pip
+  - pip:
+    - git+https://github.com/WardDeb/htseq-clip.git

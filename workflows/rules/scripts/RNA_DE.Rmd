@@ -1,0 +1,490 @@
+---
+title: "MSL1 KO RNA DE"
+author: "WardDeb"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+    code_folding: hide
+---
+
+## Libraries, paths & functions
+
+```{r snakemake sink}
+counts <- snakemake@params[['counts']]
+t2g <- snakemake@params[["t2g"]]
+odir <- snakemake@params[["odir"]]
+geneinfo <- snakemake@params[["geneinfo"]]
+padj_cutoff <- snakemake@params[['padj_cutoff']]
+pcaout <- snakemake@params[['pcaout']]
+upsetout <- snakemake@params[['upsetout']]
+```
+
+```{r libraries}
+suppressMessages(library('DESeq2'))
+suppressMessages(library('ashr'))
+suppressMessages(library('pheatmap'))
+suppressMessages(library('ggplot2'))
+suppressMessages(library('tidyverse'))
+suppressMessages(library('ggrepel'))
+suppressMessages(library('clusterProfiler'))
+suppressMessages(library('UpSetR'))
+```
+
+```{r}
+t2g <- read.table(t2g, sep='\t', quote = "")
+colnames(t2g) <- c('txn', 'gene','symbol')
+t2g <- t2g[!duplicated(t2g[,2:3]),]
+t2g$txn <- NULL
+rownames(t2g) <- t2g$gene
+t2g$gene <- NULL
+head(t2g)
+```
+
+```{r}
+geneinfo <- read.table(geneinfo, sep='\t', header=T)
+geneinfo$Chr <- substr(geneinfo$Chr, 0, 2)
+geneinfo$Chr <- gsub(";","", geneinfo$Chr)
+geneinfo$Strand <- substr(geneinfo$Strand, 0, 1)
+geneinfo$Start <- as.numeric(sub("\\;.*", "", geneinfo$Start))
+geneinfo$End <- as.numeric(sub("\\;.*", "", geneinfo$End))
+rownames(geneinfo) <- geneinfo$Geneid
+geneinfo$Geneid <- NULL
+t2g <- merge(t2g, geneinfo, by = 'row.names') %>% column_to_rownames(var = "Row.names")
+t2g <- t2g[t2g$Chr %in% c("3R", "2R", "3L", "2L", "X",  "Y",  "4",  "mi"),]
+head(t2g)
+```
+## Count matrix & metadata
+
+Read in the count matrix.
+
+```{r}
+counts <- read.delim(counts, row.names=1)
+colnames(counts)
+```
+Set up a samplesheet.
+
+```{r}
+metadf <- str_split(colnames(counts), '_', simplify=T)[,3] %>% factor() %>% data.frame()
+rownames(metadf) <- colnames(counts)
+colnames(metadf) <- c('condition')
+metadf$condition <- gsub('msl1g269', 'msl1null', metadf$condition)
+metadf$condition <- factor(metadf$condition, levels = c('wt', 'dell1', 'delc', 'dell2', 'deln', 'msl1null'))
+metadf
+```
+
+## Run PCA and DESeq2
+
+```{r}
+dds <- DESeq2::DESeqDataSetFromMatrix(
+  countData = counts,
+  colData = metadf,
+  rowData = rownames(counts),
+  design = ~condition
+)
+dds <- estimateSizeFactors(dds)
+rld <- vst(dds)
+pcaData <- plotPCA(rld, intgroup=c("condition"), returnData=TRUE)
+percentVar <- round(100 * attr(pcaData, "percentVar"))
+pcaplot <- ggplot(pcaData, aes(PC1, PC2, shape=condition, colour=condition)) +
+  geom_point(size=3) +
+  xlab(paste0("PC1: ",percentVar[1],"% variance")) +
+  ylab(paste0("PC2: ",percentVar[2],"% variance")) + 
+  coord_fixed() +
+  #scale_colour_manual(values=c("ATTP"="chocolate3","MSL1KD"="cyan4")) +
+  theme_minimal()
+pcaplot
+ggsave(pcaout, pcaplot, dpi=300)
+```
+
+```{r deseq2 and disp}
+keep <- rowSums( counts(dds, normalized=TRUE) >= 5 ) >= ncol(counts(dds, normalized=TRUE))*0.25
+dds <- dds[keep,]
+dds <- DESeq(dds)
+plotDispEsts(dds)
+```
+
+
+
+## DEGs
+
+```{r write out normalized counts}
+ncounts <- merge(counts(dds, normalized=TRUE), t2g[,c('symbol'),drop=FALSE], by='row.names')
+rownames(ncounts) <- ncounts$Row.names
+ncounts$Row.names <- NULL
+write.table(
+  ncounts,
+  file = file.path(odir, 'RNA_normcounts.tsv'),
+  quote=F,
+  sep='\t'
+)
+```
+
+
+### LRT
+
+Start with LRT
+
+```{r LRT}
+dds_lrt <- DESeq(dds, test="LRT", reduced= ~ 1)
+res_lrt <- results(dds_lrt)
+res_lrt <- res_lrt %>% data.frame %>% drop_na() 
+print(nrow(res_lrt[res_lrt$padj < 1e-5,]))
+```
+
+```{r}
+p <- pheatmap(
+  counts(dds_lrt, normalized=TRUE)[rownames(res_lrt[res_lrt$padj < 1e-5,]),],
+  scale='row',
+  show_rownames = FALSE,
+  annotation_col = dds_lrt %>% colData %>% data.frame %>% dplyr::select(!('sizeFactor'))
+)
+p
+ggsave(file.path(odir, 'LRT_heatmap.pdf'), p, dpi=300)
+```
+
+### pairwise comparisons
+
+```{r DE}
+
+mergeres <- function(resobj){
+  tdf <- resobj %>% data.frame() %>% drop_na()
+  tdf <- merge(tdf, t2g, by='row.names') %>% column_to_rownames(var = "Row.names")
+  return(tdf %>% arrange(padj))
+}
+
+dds <- DESeq(dds)
+WT_vs_dell1 <- lfcShrink(dds, contrast=c(0,1,0,0,0,0), type="ashr") %>% mergeres
+WT_vs_delc <- lfcShrink(dds, contrast=c(0,0,1,0,0,0), type="ashr") %>% mergeres
+WT_vs_dell2 <- lfcShrink(dds, contrast=c(0,0,0,1,0,0), type="ashr") %>% mergeres
+WT_vs_deln <- lfcShrink(dds, contrast=c(0,0,0,0,1,0), type="ashr") %>% mergeres
+WT_vs_MSL1null <- lfcShrink(dds, contrast=c(0,0,0,0,0,1), type="ashr") %>% mergeres
+
+write.table(
+  WT_vs_dell1,
+  file = file.path(odir, 'RNA_WT_vs_dell1_shrunk.tsv'),
+  quote=F,
+  sep='\t'
+)
+write.table(
+  WT_vs_delc,
+  file = file.path(odir, 'RNA_WT_vs_delc_shrunk.tsv'),
+  quote=F,
+  sep='\t'
+)
+write.table(
+  WT_vs_dell2,
+  file = file.path(odir, 'RNA_WT_vs_dell2_shrunk.tsv'),
+  quote=F,
+  sep='\t'
+)
+write.table(
+  WT_vs_deln,
+  file = file.path(odir, 'RNA_WT_vs_deln_shrunk.tsv'),
+  quote=F,
+  sep='\t'
+)
+write.table(
+  WT_vs_MSL1null,
+  file = file.path(odir, 'RNA_WT_vs_msl1null_shrunk.tsv'),
+  quote=F,
+  sep='\t'
+)
+```
+
+
+```{r}
+plotter <- function(df, title, t2g){
+  # MAplot
+  sigs <- nrow(df[df$padj < padj_cutoff,])
+  DR <- nrow(df[(df$padj < padj_cutoff) & (df$log2FoldChange < 0),])
+  p <- ggplot() +
+    geom_point(
+      data=df,
+      aes(x=log10(baseMean), y=log2FoldChange, color=ifelse(padj < padj_cutoff, '#1f77b4', '#7f7f7f'))
+    ) +
+    theme_minimal() +
+    scale_color_identity() +
+    geom_text_repel(
+      data = df[(df$padj < padj_cutoff) & (df$log2FoldChange < 0),] %>% arrange(log2FoldChange) %>% head(10),
+      max.overlaps = 20,
+      aes(x=log10(baseMean), y=log2FoldChange, label = symbol)
+    ) +
+    ggtitle(paste0(title, ' , ', sigs, ' DE genes , ',DR, ' Downregulated genes'))
+  
+  updf <- df[(df$padj < padj_cutoff) & (df$log2FoldChange > 0), c('Chr'), drop=FALSE]
+  updf$type <- "upreg"
+  downdf <- df[(df$padj < padj_cutoff) & (df$log2FoldChange < 0), c('Chr'), drop=FALSE]
+  downdf$type <- "downreg"
+  tdf <- rbind(updf, downdf)
+  tdf$Chr <- factor(tdf$Chr)
+  c = ggplot(tdf, aes(x=Chr, fill=type)) +
+    geom_bar(position=position_dodge2(preserve='single'), stat='count') +
+    theme_minimal() +
+    scale_fill_manual(values=c("#1f77b4", "#7f7f7f")) +
+    ylab("Number of DE genes") +
+    ggtitle(title)
+  
+  totdf <- t2g$Chr %>% table %>% data.frame
+  colnames(totdf) <- c("Chr", "total")
+  updf <- tdf[tdf$type == 'upreg', 'Chr'] %>% table %>% data.frame
+  colnames(updf) <- c("Chr", "upreg")
+  downdf <- tdf[tdf$type == 'downreg', 'Chr'] %>% table %>% data.frame
+  colnames(downdf) <- c('Chr', 'downreg')
+  reldf <- merge(merge(totdf, updf, by='Chr'), downdf, by='Chr')
+  reldf$upreg <- reldf$upreg/reldf$total
+  reldf$downreg <- reldf$downreg/reldf$total
+  reldf <- reldf[, c(1,3,4)] %>% pivot_longer(!Chr, names_to = "type", values_to = "fraction")
+  f = ggplot(reldf, aes(x=Chr, fill=type, y=fraction)) +
+    geom_bar(position=position_dodge2(preserve = 'single'), stat='identity') +
+    theme_minimal() +
+    scale_fill_manual(values=c("#1f77b4", "#7f7f7f")) +
+    ylab("(DE genes / total genes per chromosome)") +
+    ggtitle(title)
+  
+  return(list(p=p, c=c, f=f))
+}
+```
+
+```{r}
+l <- plotter(WT_vs_dell1, 'WT vs dell1', t2g)
+l$p
+l$c
+l$f
+ggsave(file.path(odir, 'DEreg_count_WTvsdell1.pdf'),l$c , dpi=300)
+ggsave(file.path(odir, 'DEreg_relcount_WTvsdell1.pdf'),l$f , dpi=300)
+```
+
+```{r}
+l <- plotter(WT_vs_delc, 'WT vs delc', t2g)
+l$p
+l$c
+l$f
+ggsave(file.path(odir, 'DEreg_count_WTvsdelc.pdf'),l$c , dpi=300)
+ggsave(file.path(odir, 'DEreg_relcount_WTvsdelc.pdf'),l$f , dpi=300)
+```
+
+
+```{r}
+l <- plotter(WT_vs_dell2, 'WT vs dell2',t2g)
+l$p
+l$c
+l$f
+ggsave(file.path(odir, 'DEreg_count_WTvsdell2.pdf'),l$c , dpi=300)
+ggsave(file.path(odir, 'DEreg_relcount_WTvsdell2.pdf'),l$f , dpi=300)
+```
+
+```{r}
+l <- plotter(WT_vs_deln, 'WT vs deln', t2g)
+l$p
+l$c
+l$f
+ggsave(file.path(odir, 'DEreg_count_WTvsdeln.pdf'),l$c , dpi=300)
+ggsave(file.path(odir, 'DEreg_relcount_WTvsdeln.pdf'),l$f , dpi=300)
+```
+
+```{r}
+l <- plotter(WT_vs_MSL1null, 'WT vs msl1null', t2g)
+l$p
+l$c
+l$f
+ggsave(file.path(odir, 'DEreg_count_WTvsMSL1null.pdf'),l$c , dpi=300)
+ggsave(file.path(odir, 'DEreg_relcount_WTvsMSL1null.pdf'),l$f , dpi=300)
+```
+### Overlap
+
+```{r}
+getg <- function(df, what='up'){
+  if (what == 'up') {
+  	return(df[(df$padj < padj_cutoff) & (df$log2FoldChange > 0),] %>% pull('symbol'))
+  }
+  else if (what == 'all'){
+  	return(df[(df$padj < padj_cutoff),] %>% pull('symbol'))
+  }
+  else if (what == 'down') {
+    return(df[(df$padj < padj_cutoff) & (df$log2FoldChange < 0),] %>% pull('symbol'))
+  }
+  else {
+    stop("Bad 'what' specified.")
+  }
+}
+```
+
+#### up and down genes
+```{r}
+pdf(file=upsetout, onefile=FALSE, width = 8, height=6)
+upset(
+  fromList(
+    list(
+      "dell1" = getg(WT_vs_dell1, what='all'),
+      "delc" = getg(WT_vs_delc, what='all'),
+      "dell2" = getg(WT_vs_dell2, what='all'),
+      "deln" = getg(WT_vs_deln, what='all'),
+      "msl1null" = getg(WT_vs_MSL1null, what='all')
+    )
+  ),
+  order.by = "freq"
+)
+dev.off()
+```
+
+#### up genes
+```{r}
+upset(
+  fromList(
+    list(
+      "dell1_UP" = getg(WT_vs_dell1, what='up'),
+      "delc_UP" = getg(WT_vs_delc, what='up'),
+      "dell2_UP" = getg(WT_vs_dell2, what='up'),
+      "deln_UP" = getg(WT_vs_deln, what='up'),
+      "msl1null_UP" = getg(WT_vs_MSL1null, what='up')
+    )
+  ),
+  order.by = "freq"
+)
+```
+#### down genes
+
+```{r}
+upset(
+  fromList(
+    list(
+      "dell1_DOWN" = getg(WT_vs_dell1, what='down'),
+      "delc_DOWN" = getg(WT_vs_delc, what='down'),
+      "dell2_DOWN" = getg(WT_vs_dell2, what='down'),
+      "deln_DOWN" = getg(WT_vs_deln, what='down'),
+      "MSL1null_DOWN" = getg(WT_vs_MSL1null, what='down')
+    )
+  ),
+  order.by = "freq"
+)
+```
+
+
+### Zscores of genes downregulated in MSL1gamma
+
+```{r get Zscores}
+scale_rows = function(x){
+    m = apply(x, 1, mean, na.rm = T)
+    s = apply(x, 1, sd, na.rm = T)
+    zscores <- (x - m) / s
+    WT_MSL1 <- apply(zscores[,c("uas_actg4_wt_msl1_rep1", "uas_actg4_wt_msl1_rep2", "uas_actg4_wt_msl1_rep3")], 1, median)
+    delL1 <- apply(zscores[,c("uas_actg4_dell1_msl1_rep1", "uas_actg4_dell1_msl1_rep2", "uas_actg4_dell1_msl1_rep3")], 1, median)
+    delC <- apply(zscores[,c("uas_actg4_delc_msl1_rep1", "uas_actg4_delc_msl1_rep2", "uas_actg4_delc_msl1_rep3")], 1, median)
+    delL2 <- apply(zscores[,c("uas_actg4_dell2_msl1_rep1", "uas_actg4_dell2_msl1_rep2", "uas_actg4_dell2_msl1_rep3")], 1, median)
+    delN <- apply(zscores[,c("uas_actg4_deln_msl1_rep1", "uas_actg4_deln_msl1_rep2", "uas_actg4_deln_msl1_rep3")], 1, median)
+    MSL1NULL <- apply(zscores[,c("msl1null_msl1L60_msl1g269_rep1", "msl1null_msl1L60_msl1g269_rep2", "msl1null_msl1L60_msl1g269_rep3")], 1, median)
+    finscores <- cbind(
+      WT_MSL1, delL1, delC, delL2, delN, MSL1NULL
+    ) %>% data.frame
+    return(finscores)
+}
+Zscores <- scale_rows(
+  counts(dds, normalized=TRUE)[WT_vs_MSL1null[(WT_vs_MSL1null$padj < padj_cutoff) & (WT_vs_MSL1null$log2FoldChange < 0),] %>% rownames,]
+)
+Zscores %>% head()
+
+```
+
+#### heatmap
+
+```{r}
+p <- pheatmap(
+  Zscores,
+  show_rownames = FALSE
+)
+p
+ggsave(file.path(odir, 'Heatmap_downreg_WTvsMSL1gamma.pdf'), p, dpi=300)
+```
+
+
+
+```{r}
+# Convert row names into a column
+df <- rownames_to_column(Zscores, var = "gene")
+df <- pivot_longer(df, cols = -gene, names_to = "samples", values_to = "zscores")
+
+df$samples <- factor(df$samples, levels=c(
+  "WT_MSL1", "delL1", "delL2", "delN", "delC", "MSL1NULL"
+))
+df <- merge(df, geneinfo, by.x='gene', by.y='row.names', all.x = T, all.y=F)
+df$X <- ifelse(df$Chr == 'X', 'X', 'non-X')
+df %>% head()
+g <- ggplot(data=df[df$Chr == 'X',]) +
+  #geom_jitter(size=0.1, aes(x=samples, fill=samples, y=zscores)) +
+  geom_boxplot(width=0.2, aes(x=samples, fill=samples, y=zscores)) +
+  geom_violin(alpha =0.4, width=1, aes(x=samples, fill=samples, y=zscores)) +
+  #geom_boxplot(width=0.1, aes(x=samples, y=zscores)) +
+  scale_fill_manual(values = c("#1f77b4", "#7f7f7f", "#7f7f7f", "#7f7f7f", "#7f7f7f", "#1f77b4")) +
+  theme(legend.position = "none") +
+  theme_minimal() +
+  ggtitle("X genes - WT vs MSL1null downregulated genes")
+g
+ggsave(file.path(odir, 'X_downreg_WTvsMSL1null.pdf'),g , dpi=300)
+```
+
+```{r}
+g <- ggplot(data=df[df$Chr != 'X',]) +
+  #geom_jitter(size=0.1, aes(x=samples, fill=samples, y=zscores)) +
+  geom_boxplot(width=0.2, aes(x=samples, fill=samples, y=zscores)) +
+  geom_violin(alpha =0.4, width=1, aes(x=samples, fill=samples, y=zscores)) +
+  #geom_boxplot(width=0.1, aes(x=samples, y=zscores)) +
+  scale_fill_manual(values = c("#1f77b4", "#7f7f7f", "#7f7f7f", "#7f7f7f", "#7f7f7f", "#1f77b4")) +
+  theme(legend.position = "none") +
+  theme_minimal() +
+  ggtitle('non-X genes - WT vs MSL1null downregulated genes')
+g
+ggsave(file.path(odir, 'nonX_downreg_WTvsMSL1null.pdf'),g , dpi=300)
+```
+Additional plot with both X and non-X combined
+
+```{r}
+g <- ggplot(data=df) +
+  #geom_jitter(size=0.1, aes(x=samples, fill=samples, y=zscores)) +
+  geom_boxplot(width=0.2, aes(x=samples, fill=samples, y=zscores)) +
+  geom_violin(alpha =0.4, width=1, aes(x=samples, fill=samples, y=zscores)) +
+  #geom_boxplot(width=0.1, aes(x=samples, y=zscores)) +
+  scale_fill_manual(values = c("#1f77b4", "#7f7f7f", "#7f7f7f", "#7f7f7f", "#7f7f7f", "#1f77b4")) +
+  theme(legend.position = "none") +
+  theme_minimal() +
+  ggtitle("WT vs MSL1null downregulated genes")
+g
+ggsave(file.path(odir, 'allcomps_WTvsMSL1null.pdf'),g , dpi=300)
+```
+
+
+```{r}
+df$sample_chrom <- paste0(df$samples,'|', df$X)
+# df$sample_chrom <- factor(df$sample_chrom, levels=c(
+#   'WT_MSL1|X', 'WT_MSL1|non-X',
+#   'delAP|X', 'delAP|non-X', 'delMP|X', 'delMP|non-X',
+#   'delN|X', 'delN|non-X', 'delC|X', 'delC|non-X',
+#   'MSL1GAMMA269|X', 'MSL1GAMMA269|non-X'
+# ))
+df$sample_chrom <- factor(df$sample_chrom, levels=c(
+  'WT_MSL1|X', 'delL1|X', 'delL2|X', 'delN|X', 'delC|X', 'MSL1NULL|X',
+  'WT_MSL1|non-X', 'delL1|non-X', 'delL2|non-X', 'delN|non-X', 'delC|non-X', 'MSL1NULL|non-X'
+))
+
+g <- ggplot(data=df) +
+  #geom_jitter(size=0.1, aes(x=sample_chrom, color=X, y=zscores)) +
+  geom_boxplot(width = 0.2, aes(x=sample_chrom, color=X, y=zscores)) +
+  geom_violin(alpha =0.4, width=1, aes(x=sample_chrom, color=X, y=zscores)) +
+  scale_color_manual(values = c(
+    "#7f7f7f", "#1f77b4"
+  )) +
+  theme(legend.position = "none") +
+  theme_minimal() +
+  xlab("") +
+  ggtitle('WT vs MSL1gamma downregulated genes') +
+  scale_x_discrete(labels= c(
+    "WT", "delL1", "delL2", "delN", "delC", "MSL1NULL",
+    "WT", "delL1", "delL2", "delN", "delC", "MSL1NULL"
+  )) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+g
+ggsave(file.path(odir, 'XnonX_downreg_WTvsMSL1gamma.pdf'),g , dpi=300)
+```
+
+

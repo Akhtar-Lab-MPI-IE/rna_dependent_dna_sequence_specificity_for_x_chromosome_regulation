@@ -1,0 +1,7 @@
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - gimmemotifs = 0.18.0
+  - tobias = 0.17.0
+  - statannotations = 0.7.1

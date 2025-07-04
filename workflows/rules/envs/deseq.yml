@@ -1,0 +1,14 @@
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - bioconductor-deseq2
+  - r-base = 4.2.3
+  - r-tidyverse
+  - r-pheatmap
+  - r-ashr
+  - r-ggrepel
+  - bioconductor-clusterprofiler
+  - bioconductor-org.dm.eg.db
+  - r-ggextra
+  - r-upsetr

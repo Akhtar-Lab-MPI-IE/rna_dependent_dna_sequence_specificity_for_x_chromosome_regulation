@@ -1,0 +1,235 @@
+---
+title: "Tanvi - DEWseq analysis"
+author: "WD"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+    code_folding: hide
+---
+
+# Libraries, paths & functions
+
+```{r snakemake sink}
+countData <- snakemake@input[['countData']]
+annotationData <- snakemake@input[['annotationData']]
+C8out <- snakemake@params[['C8out']]
+S2out <-snakemake@params[['S2out']]
+MLEout <- snakemake@params[['MLEout']]
+MSL2out <- snakemake@params[['MSL2out']]
+MLEmalefemaleout <- snakemake@params[['MLEmalefemaleout']]
+MSL2malefemaleout <- snakemake@params[['MSL2malefemaleout']]
+```
+
+```{r libs}
+library("DEWSeq")
+library("data.table")
+library("dplyr")
+countData <- fread(countData, sep ='\t')
+annotationData <- fread(annotationData, sep='\t')
+```
+
+# DEWseq
+
+Split up counts per group
+
+```{r splitcounts}
+C8_counts <- countData[, c('unique_id', 'Dme_Clone8_IgG_rep1', 'Dme_Clone8_IgG_rep2', 'Dme_Clone8_IgG_rep3', 'Dme_Clone8_MSL1_rep1', 'Dme_Clone8_MSL1_rep2', 'Dme_Clone8_MSL1_rep3')]
+S2_counts <- countData[, c('unique_id', 'Dme_S2_IgG_rep1', 'Dme_S2_IgG_rep2', 'Dme_S2_IgG_rep3', 'Dme_S2_MSL1_rep1', 'Dme_S2_MSL1_rep2', 'Dme_S2_MSL1_rep3')]
+MLE_counts <- countData[, c('unique_id', 'Dme_MLE_male_rep1', 'Dme_MLE_male_rep2', 'Dme_WOR_male')]
+MSL2_counts <- countData[, c('unique_id', 'Dme_MSL2_male_rep1', 'Dme_MSL2_male_rep2', 'Dme_MSL2_male_rep3', 'Dme_WOR_male')]
+MLE_male_female <- countData[, c('unique_id', 'Dme_MLE_male_rep1', 'Dme_MLE_male_rep2', 'Dme_MLE_female_rep1', 'Dme_MLE_female_rep2')]
+MSL2_male_female <- countData[, c('unique_id', 'Dme_MSL2_male_rep1', 'Dme_MSL2_male_rep2', 'Dme_MSL2_male_rep3', 'Dme_MSL2_female_rep1', 'Dme_MSL2_female_rep2', 'Dme_MSL2_female_rep3')]
+```
+
+
+## C8
+```{r C8}
+C8_col <- data.frame(
+  row.names = colnames(C8_counts)[-1], # since the first column is unique_id
+  type      = factor(
+    c(rep("IGG", 3),
+      rep("MSL1", 3)),
+    levels = c("IGG", "MSL1"))
+)
+C8_ddw <- DESeqDataSetFromSlidingWindows(
+  countData  = C8_counts,
+  colData    = C8_col,
+  annotObj   = annotationData,
+  tidy       = TRUE,
+  design     = ~type)
+C8_ddw <- estimateSizeFactors(C8_ddw)
+sizeFactors(C8_ddw)
+keep <- rowSums(counts(C8_ddw) >= 10) >= 2
+#keep <- rowSums(counts(C8_ddw)) >= 60
+C8_ddw <- C8_ddw[keep,]
+C8_ddw  <- estimateDispersions(C8_ddw, fitType="parametric")
+plotDispEsts(C8_ddw, main="Parametric fit")
+C8_ddw <- nbinomWaldTest(C8_ddw)
+C8_res <- resultsDEWSeq(C8_ddw, contrast = c("type", "MSL1", "IGG"), tidy = TRUE) %>% as_tibble
+write.table(
+  C8_res,
+  file = C8out,
+  quote=F,
+  sep='\t'
+)
+```
+
+## S2
+```{r S2}
+S2_col <- data.frame(
+  row.names = colnames(S2_counts)[-1], # since the first column is unique_id
+  type      = factor(
+    c(rep("IGG", 3),
+      rep("MSL1", 3)),
+    levels = c("IGG", "MSL1"))
+)
+S2_ddw <- DESeqDataSetFromSlidingWindows(
+  countData  = S2_counts,
+  colData    = S2_col,
+  annotObj   = annotationData,
+  tidy       = TRUE,
+  design     = ~type)
+S2_ddw <- estimateSizeFactors(S2_ddw)
+sizeFactors(S2_ddw)
+keep <- rowSums(counts(S2_ddw) >= 10) >= 2
+#keep <- rowSums(counts(S2_ddw)) >= 60
+S2_ddw <- S2_ddw[keep,]
+S2_ddw  <- estimateDispersions(S2_ddw, fitType="parametric")
+plotDispEsts(S2_ddw, main="Parametric fit")
+S2_ddw <- nbinomWaldTest(S2_ddw)
+S2_res <- resultsDEWSeq(S2_ddw, contrast = c("type", "MSL1", "IGG"), tidy = TRUE) %>% as_tibble
+write.table(
+  S2_res,
+  file = S2out,
+  quote=F,
+  sep='\t'
+)
+```
+
+## MLE
+```{r MLE}
+MLE_col <- data.frame(
+  row.names = colnames(MLE_counts)[-1], # since the first column is unique_id
+  type      = factor(
+    c(rep("MLE", 2),
+      rep("WOR", 1)),
+    levels = c("WOR", "MLE"))
+)
+MLE_ddw <- DESeqDataSetFromSlidingWindows(
+  countData  = MLE_counts,
+  colData    = MLE_col,
+  annotObj   = annotationData,
+  tidy       = TRUE,
+  design     = ~type)
+MLE_ddw <- estimateSizeFactors(MLE_ddw)
+sizeFactors(MLE_ddw)
+keep <- rowSums(counts(MLE_ddw) >= 10) >= 2
+#keep <- rowSums(counts(MLE_ddw)) >= 30
+MLE_ddw <- MLE_ddw[keep,]
+MLE_ddw  <- estimateDispersions(MLE_ddw, fitType="parametric")
+plotDispEsts(MLE_ddw, main="Parametric fit")
+MLE_ddw <- nbinomWaldTest(MLE_ddw)
+MLE_res <- resultsDEWSeq(MLE_ddw, contrast = c("type", "MLE", "WOR"), tidy = TRUE) %>% as_tibble
+write.table(
+  MLE_res,
+  file = MLEout,
+  quote=F,
+  sep='\t'
+)
+```
+## MSL2
+```{r MSL2}
+MSL2_col <- data.frame(
+  row.names = colnames(MSL2_counts)[-1], # since the first column is unique_id
+  type      = factor(
+    c(rep("MSL2", 3),
+      rep("WOR", 1)),
+    levels = c("WOR", "MSL2"))
+)
+MSL2_ddw <- DESeqDataSetFromSlidingWindows(
+  countData  = MSL2_counts,
+  colData    = MSL2_col,
+  annotObj   = annotationData,
+  tidy       = TRUE,
+  design     = ~type)
+MSL2_ddw <- estimateSizeFactors(MSL2_ddw)
+sizeFactors(MSL2_ddw)
+keep <- rowSums(counts(MSL2_ddw) >= 10) >= 2
+#keep <- rowSums(counts(MSL2_ddw)) >= 40
+MSL2_ddw <- MSL2_ddw[keep,]
+MSL2_ddw  <- estimateDispersions(MSL2_ddw, fitType="parametric")
+plotDispEsts(MSL2_ddw, main="Parametric fit")
+MSL2_ddw <- nbinomWaldTest(MSL2_ddw)
+MSL2_res <- resultsDEWSeq(MSL2_ddw, contrast = c("type", "MSL2", "WOR"), tidy = TRUE) %>% as_tibble
+write.table(
+  MSL2_res,
+  file = MSL2out,
+  quote=F,
+  sep='\t'
+)
+```
+
+
+## MLE male - female
+```{r MLE male female}
+MLEf_col <- data.frame(
+  row.names = colnames(MLE_male_female)[-1], # since the first column is unique_id
+  type      = factor(
+    c(rep("MLEm", 2),
+      rep("MLEf", 2)),
+    levels = c("MLEf", "MLEm"))
+)
+MLEf_ddw <- DESeqDataSetFromSlidingWindows(
+  countData  = MLE_male_female,
+  colData    = MLEf_col,
+  annotObj   = annotationData,
+  tidy       = TRUE,
+  design     = ~type)
+MLEf_ddw <- estimateSizeFactors(MLEf_ddw)
+sizeFactors(MLEf_ddw)
+keep <- rowSums(counts(MLEf_ddw)) >= 100
+MLEf_ddw <- MLEf_ddw[keep,]
+MLEf_ddw  <- estimateDispersions(MLEf_ddw, fitType="parametric")
+plotDispEsts(MLEf_ddw, main="Parametric fit")
+MLEf_ddw <- nbinomWaldTest(MLEf_ddw)
+MLEf_res <- resultsDEWSeq(MLEf_ddw, contrast = c("type", "MLEm", "MLEf"), tidy = TRUE) %>% as_tibble
+write.table(
+  MLEf_res,
+  file = MLEmalefemaleout,
+  quote=F,
+  sep='\t'
+)
+```
+
+## MSL2 male - female
+```{r MSL2 male female}
+MSL2f_col <- data.frame(
+  row.names = colnames(MSL2_male_female)[-1], # since the first column is unique_id
+  type      = factor(
+    c(rep("MSL2m", 3),
+      rep("MSL2f", 3)),
+    levels = c("MSL2f", "MSL2m"))
+)
+MSL2f_ddw <- DESeqDataSetFromSlidingWindows(
+  countData  = MSL2_male_female,
+  colData    = MSL2f_col,
+  annotObj   = annotationData,
+  tidy       = TRUE,
+  design     = ~type)
+MSL2f_ddw <- estimateSizeFactors(MSL2f_ddw)
+sizeFactors(MSL2f_ddw)
+keep <- rowSums(counts(MSL2f_ddw)) >= 100
+MSL2f_ddw <- MSL2f_ddw[keep,]
+MSL2f_ddw  <- estimateDispersions(MSL2f_ddw, fitType="parametric")
+plotDispEsts(MSL2f_ddw, main="Parametric fit")
+MSL2f_ddw <- nbinomWaldTest(MSL2f_ddw)
+MSL2f_res <- resultsDEWSeq(MSL2f_ddw, contrast = c("type", "MSL2m", "MSL2f"), tidy = TRUE) %>% as_tibble
+write.table(
+  MSL2f_res,
+  file = MSL2malefemaleout,
+  quote=F,
+  sep='\t'
+)
+```
