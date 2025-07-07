@@ -64,7 +64,7 @@ Next, the config file (`conf/smk_config.yml`) needs to be updated. Note here tha
 
 With this in place, the workflow is almost ready to run. Some system specific settings needs to be filled in the `run.py` file:
 
-  > SMK_PROFILE: path to or name of your (snakemake profile)[https://snakemake.readthedocs.io/en/stable/executing/cli.html#profiles]  
+  > SMK_PROFILE: path to or name of your [snakemake profile](https://snakemake.readthedocs.io/en/stable/executing/cli.html#profiles)  
   > WDIR: path to your working directory (note that fqs folder with content is located here)  
 
 The analysis can subsequently be run with:
