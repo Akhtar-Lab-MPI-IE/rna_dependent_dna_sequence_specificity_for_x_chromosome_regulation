@@ -1,0 +1,11 @@
+snakePipesEnv: 'snakepipes_3.1.0_conda_env_name'
+fna: 'path/to/fna'
+chromsizes: 'path/to/chromsizes'
+starindex: 'path/to/starindex'
+gtf: 'path/to/gtf'
+gff: 'repodir/conf/Drosophila_melanogaster.BDGP6.91.canonical.gff3.gz'
+rar: 'repodir/conf/dm6_rar.bed'
+canchr: 'repodir/conf/can_chrs.txt'
+geneinfo: 'repodir/conf/genes.info'
+motifs: 'repodir/conf/motifs.meme'
+padj_cutoff: 0.01
