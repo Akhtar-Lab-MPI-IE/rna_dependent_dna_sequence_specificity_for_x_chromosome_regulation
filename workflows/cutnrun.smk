@@ -1,5 +1,4 @@
 SAMPLES, = glob_wildcards("fqs/CNR/{sample}_R1.fastq.gz")
-print(f"Samples = {SAMPLES}")
 
 IP = ['CNR_MSL1']
 peakCategories = [

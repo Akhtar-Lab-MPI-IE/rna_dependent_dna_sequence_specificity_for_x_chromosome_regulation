@@ -70,7 +70,7 @@ metadf <- str_split(colnames(counts), '_', simplify=T)[,3] %>% factor() %>% data
 rownames(metadf) <- colnames(counts)
 colnames(metadf) <- c('condition')
 metadf$condition <- gsub('msl1g269', 'msl1null', metadf$condition)
-metadf$condition <- factor(metadf$condition, levels = c('wt', 'dell1', 'delc', 'dell2', 'deln', 'msl1null'))
+metadf$condition <- factor(metadf$condition, levels = c('wt', 'dell1', 'dell2', 'deln', 'msl1null'))
 metadf
 ```
 
@@ -155,21 +155,15 @@ mergeres <- function(resobj){
 }
 
 dds <- DESeq(dds)
-WT_vs_dell1 <- lfcShrink(dds, contrast=c(0,1,0,0,0,0), type="ashr") %>% mergeres
-WT_vs_delc <- lfcShrink(dds, contrast=c(0,0,1,0,0,0), type="ashr") %>% mergeres
-WT_vs_dell2 <- lfcShrink(dds, contrast=c(0,0,0,1,0,0), type="ashr") %>% mergeres
-WT_vs_deln <- lfcShrink(dds, contrast=c(0,0,0,0,1,0), type="ashr") %>% mergeres
-WT_vs_MSL1null <- lfcShrink(dds, contrast=c(0,0,0,0,0,1), type="ashr") %>% mergeres
+print(resultsNames(dds))
+WT_vs_dell1 <- lfcShrink(dds, contrast=c(0,1,0,0,0), type="ashr") %>% mergeres
+WT_vs_dell2 <- lfcShrink(dds, contrast=c(0,0,1,0,0), type="ashr") %>% mergeres
+WT_vs_deln <- lfcShrink(dds, contrast=c(0,0,0,1,0), type="ashr") %>% mergeres
+WT_vs_MSL1null <- lfcShrink(dds, contrast=c(0,0,0,0,1), type="ashr") %>% mergeres
 
 write.table(
   WT_vs_dell1,
   file = file.path(odir, 'RNA_WT_vs_dell1_shrunk.tsv'),
-  quote=F,
-  sep='\t'
-)
-write.table(
-  WT_vs_delc,
-  file = file.path(odir, 'RNA_WT_vs_delc_shrunk.tsv'),
   quote=F,
   sep='\t'
 )
@@ -257,16 +251,6 @@ ggsave(file.path(odir, 'DEreg_relcount_WTvsdell1.pdf'),l$f , dpi=300)
 ```
 
 ```{r}
-l <- plotter(WT_vs_delc, 'WT vs delc', t2g)
-l$p
-l$c
-l$f
-ggsave(file.path(odir, 'DEreg_count_WTvsdelc.pdf'),l$c , dpi=300)
-ggsave(file.path(odir, 'DEreg_relcount_WTvsdelc.pdf'),l$f , dpi=300)
-```
-
-
-```{r}
 l <- plotter(WT_vs_dell2, 'WT vs dell2',t2g)
 l$p
 l$c
@@ -318,7 +302,6 @@ upset(
   fromList(
     list(
       "dell1" = getg(WT_vs_dell1, what='all'),
-      "delc" = getg(WT_vs_delc, what='all'),
       "dell2" = getg(WT_vs_dell2, what='all'),
       "deln" = getg(WT_vs_deln, what='all'),
       "msl1null" = getg(WT_vs_MSL1null, what='all')
@@ -335,7 +318,6 @@ upset(
   fromList(
     list(
       "dell1_UP" = getg(WT_vs_dell1, what='up'),
-      "delc_UP" = getg(WT_vs_delc, what='up'),
       "dell2_UP" = getg(WT_vs_dell2, what='up'),
       "deln_UP" = getg(WT_vs_deln, what='up'),
       "msl1null_UP" = getg(WT_vs_MSL1null, what='up')
@@ -351,7 +333,6 @@ upset(
   fromList(
     list(
       "dell1_DOWN" = getg(WT_vs_dell1, what='down'),
-      "delc_DOWN" = getg(WT_vs_delc, what='down'),
       "dell2_DOWN" = getg(WT_vs_dell2, what='down'),
       "deln_DOWN" = getg(WT_vs_deln, what='down'),
       "MSL1null_DOWN" = getg(WT_vs_MSL1null, what='down')
@@ -371,12 +352,11 @@ scale_rows = function(x){
     zscores <- (x - m) / s
     WT_MSL1 <- apply(zscores[,c("uas_actg4_wt_msl1_rep1", "uas_actg4_wt_msl1_rep2", "uas_actg4_wt_msl1_rep3")], 1, median)
     delL1 <- apply(zscores[,c("uas_actg4_dell1_msl1_rep1", "uas_actg4_dell1_msl1_rep2", "uas_actg4_dell1_msl1_rep3")], 1, median)
-    delC <- apply(zscores[,c("uas_actg4_delc_msl1_rep1", "uas_actg4_delc_msl1_rep2", "uas_actg4_delc_msl1_rep3")], 1, median)
     delL2 <- apply(zscores[,c("uas_actg4_dell2_msl1_rep1", "uas_actg4_dell2_msl1_rep2", "uas_actg4_dell2_msl1_rep3")], 1, median)
     delN <- apply(zscores[,c("uas_actg4_deln_msl1_rep1", "uas_actg4_deln_msl1_rep2", "uas_actg4_deln_msl1_rep3")], 1, median)
     MSL1NULL <- apply(zscores[,c("msl1null_msl1L60_msl1g269_rep1", "msl1null_msl1L60_msl1g269_rep2", "msl1null_msl1L60_msl1g269_rep3")], 1, median)
     finscores <- cbind(
-      WT_MSL1, delL1, delC, delL2, delN, MSL1NULL
+      WT_MSL1, delL1, delL2, delN, MSL1NULL
     ) %>% data.frame
     return(finscores)
 }
@@ -406,7 +386,7 @@ df <- rownames_to_column(Zscores, var = "gene")
 df <- pivot_longer(df, cols = -gene, names_to = "samples", values_to = "zscores")
 
 df$samples <- factor(df$samples, levels=c(
-  "WT_MSL1", "delL1", "delL2", "delN", "delC", "MSL1NULL"
+  "WT_MSL1", "delL1", "delL2", "delN", "MSL1NULL"
 ))
 df <- merge(df, geneinfo, by.x='gene', by.y='row.names', all.x = T, all.y=F)
 df$X <- ifelse(df$Chr == 'X', 'X', 'non-X')
@@ -445,7 +425,7 @@ g <- ggplot(data=df) +
   geom_boxplot(width=0.2, aes(x=samples, fill=samples, y=zscores)) +
   geom_violin(alpha =0.4, width=1, aes(x=samples, fill=samples, y=zscores)) +
   #geom_boxplot(width=0.1, aes(x=samples, y=zscores)) +
-  scale_fill_manual(values = c("#1f77b4", "#7f7f7f", "#7f7f7f", "#7f7f7f", "#7f7f7f", "#1f77b4")) +
+  scale_fill_manual(values = c("#1f77b4", "#7f7f7f", "#7f7f7f", "#7f7f7f", "#1f77b4")) +
   theme(legend.position = "none") +
   theme_minimal() +
   ggtitle("WT vs MSL1null downregulated genes")
@@ -463,8 +443,8 @@ df$sample_chrom <- paste0(df$samples,'|', df$X)
 #   'MSL1GAMMA269|X', 'MSL1GAMMA269|non-X'
 # ))
 df$sample_chrom <- factor(df$sample_chrom, levels=c(
-  'WT_MSL1|X', 'delL1|X', 'delL2|X', 'delN|X', 'delC|X', 'MSL1NULL|X',
-  'WT_MSL1|non-X', 'delL1|non-X', 'delL2|non-X', 'delN|non-X', 'delC|non-X', 'MSL1NULL|non-X'
+  'WT_MSL1|X', 'delL1|X', 'delL2|X', 'delN|X', 'MSL1NULL|X',
+  'WT_MSL1|non-X', 'delL1|non-X', 'delL2|non-X', 'delN|non-X', 'MSL1NULL|non-X'
 ))
 
 g <- ggplot(data=df) +
@@ -479,8 +459,8 @@ g <- ggplot(data=df) +
   xlab("") +
   ggtitle('WT vs MSL1gamma downregulated genes') +
   scale_x_discrete(labels= c(
-    "WT", "delL1", "delL2", "delN", "delC", "MSL1NULL",
-    "WT", "delL1", "delL2", "delN", "delC", "MSL1NULL"
+    "WT", "delL1", "delL2", "delN", "MSL1NULL",
+    "WT", "delL1", "delL2", "delN", "MSL1NULL"
   )) +
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
 g
