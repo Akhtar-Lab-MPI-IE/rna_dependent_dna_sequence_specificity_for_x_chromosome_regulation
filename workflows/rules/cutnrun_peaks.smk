@@ -31,8 +31,8 @@ rule CNR_filter_peaks:
 
 rule CNR_intersect_peaks:
   input:
-    MSL1_r1 = temp("CutnRun/final_peaks/CNR_MSL1_rep1.can.bed"),
-    MSL1_r2 = temp("CutnRun/final_peaks/CNR_MSL1_rep2.can.bed")
+    MSL1_r1 = "CutnRun/final_peaks/CNR_MSL1_rep1.can.bed",
+    MSL1_r2 = "CutnRun/final_peaks/CNR_MSL1_rep2.can.bed"
   output:
     MSL1 = 'CutnRun/final_peaks/CNR_MSL1.bed'
   shell:'''
